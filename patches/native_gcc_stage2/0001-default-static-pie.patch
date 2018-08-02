@@ -1,0 +1,136 @@
+From 5d46c52fded3e3aed882e016b5a4d053b33a1458 Mon Sep 17 00:00:00 2001
+From: Cory Fields <lists@coryfields.com>
+Date: Tue, 3 Jul 2018 23:57:39 -0400
+Subject: [PATCH 1/3] default static pie
+
+---
+ gcc/config/gnu-user.h        | 18 +++++++++---------
+ gcc/config/i386/gnu-user.h   |  4 ++--
+ gcc/config/i386/gnu-user64.h |  4 ++--
+ gcc/gcc.c                    |  8 ++++++++
+ 4 files changed, 21 insertions(+), 13 deletions(-)
+
+diff --git a/gcc/config/gnu-user.h b/gcc/config/gnu-user.h
+index cba3c0b..77d89fe 100644
+--- a/gcc/config/gnu-user.h
++++ b/gcc/config/gnu-user.h
+@@ -51,14 +51,14 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
+ #if defined HAVE_LD_PIE
+ #define GNU_USER_TARGET_STARTFILE_SPEC \
+   "%{shared:; \
+-     pg|p|profile:%{static-pie:grcrt1.o%s;:gcrt1.o%s}; \
++     pg|p|profile:%{" STATIC_PIE_SPEC ":grcrt1.o%s;:gcrt1.o%s}; \
+      static:crt1.o%s; \
+-     static-pie:rcrt1.o%s; \
++     " STATIC_PIE_SPEC ":rcrt1.o%s; \
+      " PIE_SPEC ":Scrt1.o%s; \
+      :crt1.o%s} \
+    crti.o%s \
+    %{static:crtbeginT.o%s; \
+-     shared|static-pie|" PIE_SPEC ":crtbeginS.o%s; \
++     shared|" STATIC_PIE_SPEC "|" PIE_SPEC ":crtbeginS.o%s; \
+      :crtbegin.o%s} \
+    %{fvtable-verify=none:%s; \
+      fvtable-verify=preinit:vtv_start_preinit.o%s; \
+@@ -71,7 +71,7 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
+      :crt1.o%s} \
+    crti.o%s \
+    %{static:crtbeginT.o%s; \
+-     shared|pie|static-pie:crtbeginS.o%s; \
++     shared|pie|" STATIC_PIE_SPEC ":crtbeginS.o%s; \
+      :crtbegin.o%s} \
+    %{fvtable-verify=none:%s; \
+      fvtable-verify=preinit:vtv_start_preinit.o%s; \
+@@ -93,7 +93,7 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
+      fvtable-verify=preinit:vtv_end_preinit.o%s; \
+      fvtable-verify=std:vtv_end.o%s} \
+    %{static:crtend.o%s; \
+-     shared|static-pie|" PIE_SPEC ":crtendS.o%s; \
++     shared|" STATIC_PIE_SPEC "|" PIE_SPEC ":crtendS.o%s; \
+      :crtend.o%s} \
+    crtn.o%s \
+    " CRTOFFLOADEND
+@@ -103,7 +103,7 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
+      fvtable-verify=preinit:vtv_end_preinit.o%s; \
+      fvtable-verify=std:vtv_end.o%s} \
+    %{static:crtend.o%s; \
+-     shared|pie|static-pie:crtendS.o%s; \
++     shared|pie|" STATIC_PIE_SPEC ":crtendS.o%s; \
+      :crtend.o%s} \
+    crtn.o%s \
+    " CRTOFFLOADEND
+@@ -133,13 +133,13 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
+ #define LIB_SPEC GNU_USER_TARGET_LIB_SPEC
+ 
+ #if defined(HAVE_LD_EH_FRAME_HDR)
+-#define LINK_EH_SPEC "%{!static|static-pie:--eh-frame-hdr} "
++#define LINK_EH_SPEC "%{!static|" STATIC_PIE_SPEC ":--eh-frame-hdr} "
+ #endif
+ 
+ #undef LINK_GCC_C_SEQUENCE_SPEC
+ #define LINK_GCC_C_SEQUENCE_SPEC \
+-  "%{static|static-pie:--start-group} %G %L \
+-   %{static|static-pie:--end-group}%{!static:%{!static-pie:%G}}"
++  "%{static|" STATIC_PIE_SPEC ":--start-group} %G %L \
++   %{static|" STATIC_PIE_SPEC ":--end-group %G}"
+ 
+ /* Use --as-needed -lgcc_s for eh support.  */
+ #ifdef HAVE_LD_AS_NEEDED
+diff --git a/gcc/config/i386/gnu-user.h b/gcc/config/i386/gnu-user.h
+index d1dad68..a132049 100644
+--- a/gcc/config/i386/gnu-user.h
++++ b/gcc/config/i386/gnu-user.h
+@@ -77,10 +77,10 @@ along with GCC; see the file COPYING3.  If not see
+ #define GNU_USER_TARGET_LINK_SPEC "-m %(link_emulation) %{shared:-shared} \
+   %{!shared: \
+     %{!static: \
+-      %{!static-pie: \
++      %{" NO_STATIC_PIE_SPEC ": \
+ 	%{rdynamic:-export-dynamic} \
+ 	-dynamic-linker %(dynamic_linker)}} \
+-    %{static:-static} %{static-pie:-static -pie --no-dynamic-linker -z text}}"
++    %{static:-static} %{" STATIC_PIE_SPEC ":-static -pie --no-dynamic-linker -z text}}"
+ 
+ #undef	LINK_SPEC
+ #define LINK_SPEC GNU_USER_TARGET_LINK_SPEC
+diff --git a/gcc/config/i386/gnu-user64.h b/gcc/config/i386/gnu-user64.h
+index 491416f..775f33c 100644
+--- a/gcc/config/i386/gnu-user64.h
++++ b/gcc/config/i386/gnu-user64.h
+@@ -59,12 +59,12 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
+   %{shared:-shared} \
+   %{!shared: \
+     %{!static: \
+-      %{!static-pie: \
++      %{" NO_STATIC_PIE_SPEC ": \
+ 	%{rdynamic:-export-dynamic} \
+ 	%{" SPEC_32 ":-dynamic-linker " GNU_USER_DYNAMIC_LINKER32 "} \
+ 	%{" SPEC_64 ":-dynamic-linker " GNU_USER_DYNAMIC_LINKER64 "} \
+ 	%{" SPEC_X32 ":-dynamic-linker " GNU_USER_DYNAMIC_LINKERX32 "}}} \
+-    %{static:-static} %{static-pie:-static -pie --no-dynamic-linker -z text}}"
++    %{static:-static} %{" STATIC_PIE_SPEC ":-static -pie --no-dynamic-linker -z text}}"
+ 
+ #undef	LINK_SPEC
+ #define LINK_SPEC GNU_USER_TARGET_LINK_SPEC
+diff --git a/gcc/gcc.c b/gcc/gcc.c
+index a716f70..2d29dc4 100644
+--- a/gcc/gcc.c
++++ b/gcc/gcc.c
+@@ -920,6 +920,14 @@ proper position among the other output files.  */
+ #define NO_FPIE_AND_FPIC_SPEC	FPIE_OR_FPIC_SPEC ":;"
+ #endif
+ 
++#ifdef ENABLE_DEFAULT_STATIC_PIE
++#define STATIC_PIE_SPEC		"static-pie|!shared"
++#define NO_STATIC_PIE_SPEC	"!static_pie|shared|static|r"
++#else
++#define STATIC_PIE_SPEC		"static-pie"
++#define NO_STATIC_PIE_SPEC	"!static_pie|shared|static|r"
++#endif
++
+ #ifndef LINK_PIE_SPEC
+ #ifdef HAVE_LD_PIE
+ #ifndef LD_PIE_SPEC
+-- 
+2.7.4
+
