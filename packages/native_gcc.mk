@@ -6,7 +6,6 @@ $(package)_sha256_hash=196c3c04ba2613f893283977e6011b2345d1cd1af9abeac58e916b1aa
 $(package)_build_subdir=build
 $(package)_dependencies=native_binutils
 $(package)_mingw32_dependencies=native_mingw-w64-headers
-$(package)_patches=0009-stabilize-ira-color.patch 0011-tree-ssa-loop-im-small-fix.patch
 
 $(package)_mpfr_version=4.0.1
 $(package)_mpfr_download_path=https://ftpmirror.gnu.org/mpfr
