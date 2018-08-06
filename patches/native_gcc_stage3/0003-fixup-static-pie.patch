@@ -1,0 +1,96 @@
+From 8621b3393883994e1910cad2637de22a5297b214 Mon Sep 17 00:00:00 2001
+From: Cory Fields <lists@coryfields.com>
+Date: Thu, 5 Jul 2018 21:10:33 -0400
+Subject: [PATCH 3/3] fixup static pie
+
+---
+ gcc/config/i386/gnu-user.h   | 14 +++++++-------
+ gcc/config/i386/gnu-user64.h | 16 +++++++---------
+ gcc/gcc.c                    | 10 ++++++----
+ 3 files changed, 20 insertions(+), 20 deletions(-)
+
+diff --git a/gcc/config/i386/gnu-user.h b/gcc/config/i386/gnu-user.h
+index a132049..fc37301 100644
+--- a/gcc/config/i386/gnu-user.h
++++ b/gcc/config/i386/gnu-user.h
+@@ -74,13 +74,13 @@ along with GCC; see the file COPYING3.  If not see
+   { "link_emulation", GNU_USER_LINK_EMULATION },\
+   { "dynamic_linker", GNU_USER_DYNAMIC_LINKER }
+ 
+-#define GNU_USER_TARGET_LINK_SPEC "-m %(link_emulation) %{shared:-shared} \
+-  %{!shared: \
+-    %{!static: \
+-      %{" NO_STATIC_PIE_SPEC ": \
+-	%{rdynamic:-export-dynamic} \
+-	-dynamic-linker %(dynamic_linker)}} \
+-    %{static:-static} %{" STATIC_PIE_SPEC ":-static -pie --no-dynamic-linker -z text}}"
++#define LD_STATIC_PIE_SPEC "-static -pie --no-dynamic-linker -z text "
++
++#define GNU_USER_TARGET_LINK_SPEC "-m %(link_emulation) \
++  %{static: -static; \
++    : %{shared: -shared; \
++      : %{" STATIC_PIE_SPEC ":" LD_STATIC_PIE_SPEC "}; \
++        : %{rdynamic: -export-dynamic} -dynamic-linker %(dynamic_linker) }}
+ 
+ #undef	LINK_SPEC
+ #define LINK_SPEC GNU_USER_TARGET_LINK_SPEC
+diff --git a/gcc/config/i386/gnu-user64.h b/gcc/config/i386/gnu-user64.h
+index 775f33c..a69ee8a 100644
+--- a/gcc/config/i386/gnu-user64.h
++++ b/gcc/config/i386/gnu-user64.h
+@@ -56,15 +56,13 @@ see the files COPYING3 and COPYING.RUNTIME respectively.  If not, see
+                   "%{" SPEC_64 ":-m " GNU_USER_LINK_EMULATION64 "} \
+                    %{" SPEC_32 ":-m " GNU_USER_LINK_EMULATION32 "} \
+                    %{" SPEC_X32 ":-m " GNU_USER_LINK_EMULATIONX32 "} \
+-  %{shared:-shared} \
+-  %{!shared: \
+-    %{!static: \
+-      %{" NO_STATIC_PIE_SPEC ": \
+-	%{rdynamic:-export-dynamic} \
+-	%{" SPEC_32 ":-dynamic-linker " GNU_USER_DYNAMIC_LINKER32 "} \
+-	%{" SPEC_64 ":-dynamic-linker " GNU_USER_DYNAMIC_LINKER64 "} \
+-	%{" SPEC_X32 ":-dynamic-linker " GNU_USER_DYNAMIC_LINKERX32 "}}} \
+-    %{static:-static} %{" STATIC_PIE_SPEC ":-static -pie --no-dynamic-linker -z text}}"
++  %{static: -static; \
++    : %{shared: -shared; \
++      : %{" STATIC_PIE_SPEC ": -static -pie --no-dynamic-linker -z text; \
++        : %{rdynamic: -export-dynamic} \
++	      %{" SPEC_32 ":-dynamic-linker " GNU_USER_DYNAMIC_LINKER32 "} \
++	      %{" SPEC_64 ":-dynamic-linker " GNU_USER_DYNAMIC_LINKER64 "} \
++          %{" SPEC_X32 ":-dynamic-linker " GNU_USER_DYNAMIC_LINKERX32 "}}}} "
+ 
+ #undef	LINK_SPEC
+ #define LINK_SPEC GNU_USER_TARGET_LINK_SPEC
+diff --git a/gcc/gcc.c b/gcc/gcc.c
+index 2d29dc4..ffe64b9 100644
+--- a/gcc/gcc.c
++++ b/gcc/gcc.c
+@@ -921,11 +921,13 @@ proper position among the other output files.  */
+ #endif
+ 
+ #ifdef ENABLE_DEFAULT_STATIC_PIE
+-#define STATIC_PIE_SPEC		"static-pie|!shared"
+-#define NO_STATIC_PIE_SPEC	"!static_pie|shared|static|r"
++#define STATIC_PIE_SPEC		PIE_SPEC
+ #else
+ #define STATIC_PIE_SPEC		"static-pie"
+-#define NO_STATIC_PIE_SPEC	"!static_pie|shared|static|r"
++#endif
++
++#ifndef LD_STATIC_PIE_SPEC
++#define LD_STATIC_PIE_SPEC	"-static -pie"
+ #endif
+ 
+ #ifndef LINK_PIE_SPEC
+@@ -936,7 +938,7 @@ proper position among the other output files.  */
+ #else
+ #define LD_PIE_SPEC ""
+ #endif
+-#define LINK_PIE_SPEC "%{static|shared|r:;" PIE_SPEC ":" LD_PIE_SPEC "} "
++#define LINK_PIE_SPEC "%{static|shared|r:;" STATIC_PIE_SPEC ":" LD_STATIC_PIE_SPEC ";" PIE_SPEC ":" LD_PIE_SPEC "} "
+ #endif
+ 
+ #ifndef LINK_BUILDID_SPEC
+-- 
+2.7.4
+

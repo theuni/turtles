@@ -1,0 +1,124 @@
+From c686898cab2647ffec7fa15e8f5e0f0caf219c6d Mon Sep 17 00:00:00 2001
+From: Cory Fields <lists@coryfields.com>
+Date: Thu, 5 Jul 2018 13:18:13 -0400
+Subject: [PATCH 2/3] autoconf
+
+---
+ gcc/config.in    |  6 ++++++
+ gcc/configure    | 24 ++++++++++++++++++++++--
+ gcc/configure.ac | 12 ++++++++++++
+ 3 files changed, 40 insertions(+), 2 deletions(-)
+
+diff --git a/gcc/config.in b/gcc/config.in
+index 5bccb40..7840363 100644
+--- a/gcc/config.in
++++ b/gcc/config.in
+@@ -102,6 +102,12 @@
+ #endif
+ 
+ 
++/* Define if your target supports default static PIE and it is enabled. */
++#ifndef USED_FOR_TARGET
++#undef ENABLE_DEFAULT_STATIC_PIE
++#endif
++
++
+ /* Define if you want more run-time sanity checks for dataflow. */
+ #ifndef USED_FOR_TARGET
+ #undef ENABLE_DF_CHECKING
+diff --git a/gcc/configure b/gcc/configure
+index 6121e16..f08e0fd 100755
+--- a/gcc/configure
++++ b/gcc/configure
+@@ -602,6 +602,7 @@ ac_subst_vars='LTLIBOBJS
+ LIBOBJS
+ NO_PIE_FLAG
+ NO_PIE_CFLAGS
++enable_default_static_pie
+ enable_default_pie
+ PICFLAG
+ enable_host_shared
+@@ -959,6 +960,7 @@ enable_libquadmath_support
+ with_linker_hash_style
+ with_diagnostics_color
+ enable_default_pie
++enable_default_static_pie
+ '
+       ac_precious_vars='build_alias
+ host_alias
+@@ -1701,6 +1703,9 @@ Optional Features:
+   --disable-libquadmath-support
+                           disable libquadmath support for Fortran
+   --enable-default-pie    enable Position Independent Executable as default
++  --enable-default-static-pie
++                          enable Static Position Independent Executable as
++                          default
+ 
+ Optional Packages:
+   --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
+@@ -18448,7 +18453,7 @@ else
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 18451 "configure"
++#line 18456 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -18554,7 +18559,7 @@ else
+   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
+   lt_status=$lt_dlunknown
+   cat > conftest.$ac_ext <<_LT_EOF
+-#line 18557 "configure"
++#line 18562 "configure"
+ #include "confdefs.h"
+ 
+ #if HAVE_DLFCN_H
+@@ -30105,6 +30110,21 @@ $as_echo "#define ENABLE_DEFAULT_PIE 1" >>confdefs.h
+ fi
+ 
+ 
++# Check whether --enable-default-static-pie was given.
++# Check whether --enable-default-static-pie was given.
++if test "${enable_default_static_pie+set}" = set; then :
++  enableval=$enable_default_static_pie; enable_default_static_pie=$enableval
++else
++  enable_default_static_pie=no
++fi
++
++if test x$enable_default_static_pie = xyes ; then
++
++$as_echo "#define ENABLE_DEFAULT_STATIC_PIE 1" >>confdefs.h
++
++fi
++
++
+ # Check if -fno-PIE works.
+ { $as_echo "$as_me:${as_lineno-$LINENO}: checking for -fno-PIE option" >&5
+ $as_echo_n "checking for -fno-PIE option... " >&6; }
+diff --git a/gcc/configure.ac b/gcc/configure.ac
+index b066cc6..d897869 100644
+--- a/gcc/configure.ac
++++ b/gcc/configure.ac
+@@ -6517,6 +6517,18 @@ if test x$enable_default_pie = xyes ; then
+ fi
+ AC_SUBST([enable_default_pie])
+ 
++# Check whether --enable-default-static-pie was given.
++AC_ARG_ENABLE(default-static-pie,
++[AS_HELP_STRING([--enable-default-static-pie],
++  [enable Static Position Independent Executable as default])],
++enable_default_static_pie=$enableval,
++enable_default_static_pie=no)
++if test x$enable_default_static_pie = xyes ; then
++  AC_DEFINE(ENABLE_DEFAULT_STATIC_PIE, 1,
++      [Define if your target supports default static PIE and it is enabled.])
++fi
++AC_SUBST([enable_default_static_pie])
++
+ # Check if -fno-PIE works.
+ AC_CACHE_CHECK([for -fno-PIE option],
+   [gcc_cv_c_no_fpie],
+-- 
+2.7.4
+
