@@ -1,0 +1,12 @@
+diff -ruN old/applets/Kbuild.src new/applets/Kbuild.src
+--- old/applets/Kbuild.src	2018-07-06 11:30:19.967406537 -0400
++++ new/applets/Kbuild.src	2018-07-06 11:29:49.871407608 -0400
+@@ -5,7 +5,7 @@
+ # Licensed under GPLv2, see file LICENSE in this source tree.
+ 
+ obj-y :=
+-obj-y += applets.o
++lib-y += applets.o
+ 
+ hostprogs-y:=
+ hostprogs-y += usage usage_pod applet_tables
