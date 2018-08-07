@@ -4,6 +4,7 @@ $(package)_download_path=https://www.musl-libc.org/releases
 $(package)_file_name=musl-$($(package)_version).tar.gz
 $(package)_sha256_hash=d017ee5d01aec0c522a1330fdff06b1e428cb409e1db819cc4935d5da4a5a118
 $(package)_dependencies=native_gcc native_binutils
+$(package)_patches=qsort.c msort.c qsort2.c
 
 define $(package)_set_vars
   $(package)_config_opts=--build=$(build)
@@ -15,6 +16,9 @@ define $(package)_set_vars
   $(package)_config_opts+=CROSS_COMPILE=$(build_toolchain_prefix)/bin/$(build)-
 endef
 
+define $(package)_preprocess_cmds
+  cp $($(package)_patch_dir)/qsort.c $($(package)_patch_dir)/msort.c $($(package)_patch_dir)/qsort2.c src/stdlib
+endef
 
 define $(package)_config_cmds
   ./configure $$($(package)_config_opts)
