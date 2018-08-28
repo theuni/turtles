@@ -321,15 +321,17 @@ void qsort_old (void *b, size_t n, size_t s, __compar_fn_t cmp);
 void
 qsort (void *b, size_t n, size_t s, __compar_fn_t cmp)
 {
-  void* tmp = malloc (n * s);
-  memcpy(tmp, b, n * s);
-  qsort_old(tmp, n, s, cmp);
-  __qsort_r (b, n, s, (__compar_d_fn_t) cmp, NULL);
-  int result = memcmp(b, tmp, s * n);
   char* do_assert = getenv("QSORT_ASSERT");
   if (do_assert && do_assert[0] == '1')
   {
+    void* tmp = malloc (n * s);
+    memcpy(tmp, b, n * s);
+    __qsort_r (tmp, n, s, (__compar_d_fn_t) cmp, NULL);
+    qsort_old(b, n, s, cmp);
+    int result = memcmp(b, tmp, s * n);
+    free(tmp);
     assert(!result);
+  } else {
+    qsort_old(b, n, s, cmp);
   }
-  free(tmp);
 }
