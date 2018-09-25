@@ -1,0 +1,346 @@
+From 7d885e3c840e4e00f7b2e50c3cb3298107dd0cf8 Mon Sep 17 00:00:00 2001
+From: amonakov <amonakov@138bc75d-0d04-0410-961f-82ee72b054a4>
+Date: Sun, 13 May 2018 18:23:06 +0000
+Subject: [PATCH 1/4] Introduce gcc_qsort
+
+	* sort.cc: New file.
+	* system.h [!CHECKING_P] (qsort): Redirect to gcc_qsort.
+	* vec.c (qsort_chk): Use gcc_qsort.
+	* Makefile.in (OBJS-libcommon): Add sort.o.
+	(build/sort.o): New target.  Use it...
+	(BUILD_RTL): ... here, and...
+	(build/gencfn-macros): ... here, and...
+	(build/genmatch): ... here.
+
+git-svn-id: svn+ssh://gcc.gnu.org/svn/gcc/trunk@260216 138bc75d-0d04-0410-961f-82ee72b054a4
+---
+ gcc/Makefile.in |   9 ++-
+ gcc/sort.cc     | 232 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ gcc/system.h    |   7 +-
+ gcc/vec.c       |   2 +-
+ 4 files changed, 243 insertions(+), 7 deletions(-)
+ create mode 100644 gcc/sort.cc
+
+diff --git a/gcc/Makefile.in b/gcc/Makefile.in
+index 20bee04..8ec0511 100644
+--- a/gcc/Makefile.in
++++ b/gcc/Makefile.in
+@@ -1076,7 +1076,7 @@ BUILD_LIBS = $(BUILD_LIBIBERTY)
+ 
+ BUILD_RTL = build/rtl.o build/read-rtl.o build/ggc-none.o \
+ 	    build/vec.o build/min-insn-modes.o build/gensupport.o \
+-	    build/print-rtl.o build/hash-table.o
++	    build/print-rtl.o build/hash-table.o build/sort.o
+ BUILD_MD = build/read-md.o
+ BUILD_ERRORS = build/errors.o
+ 
+@@ -1611,7 +1611,7 @@ OBJS-libcommon = diagnostic.o diagnostic-color.o diagnostic-show-locus.o \
+ 	pretty-print.o intl.o \
+ 	sbitmap.o \
+ 	vec.o input.o version.o hash-table.o ggc-none.o memory-block.o \
+-	selftest.o selftest-diagnostic.o
++	selftest.o selftest-diagnostic.o sort.o
+ 
+ # Objects in libcommon-target.a, used by drivers and by the core
+ # compiler and containing target-dependent code.
+@@ -2681,6 +2681,7 @@ build/vec.o : vec.c $(BCONFIG_H) $(SYSTEM_H) $(CORETYPES_H) $(VEC_H)	\
+   $(GGC_H) toplev.h $(DIAGNOSTIC_CORE_H)
+ build/hash-table.o : hash-table.c $(BCONFIG_H) $(SYSTEM_H)		\
+   $(CORETYPES_H) $(HASH_TABLE_H) $(GGC_H) toplev.h $(DIAGNOSTIC_CORE_H)
++build/sort.o : sort.cc $(BCONFIG_H) $(SYSTEM_H)
+ build/inchash.o : inchash.c $(BCONFIG_H) $(SYSTEM_H) $(CORETYPES_H)	\
+   $(HASHTAB_H) inchash.h
+ build/gencondmd.o : build/gencondmd.c $(BCONFIG_H) $(SYSTEM_H)		\
+@@ -2817,7 +2818,7 @@ build/genautomata$(build_exeext) : BUILD_LIBS += -lm
+ 
+ build/genrecog$(build_exeext) : build/hash-table.o build/inchash.o
+ build/gencfn-macros$(build_exeext) : build/hash-table.o build/vec.o \
+-  build/ggc-none.o
++  build/ggc-none.o build/sort.o
+ 
+ # For stage1 and when cross-compiling use the build libcpp which is
+ # built with NLS disabled.  For stage2+ use the host library and
+@@ -2831,7 +2832,7 @@ build/genmatch$(build_exeext): BUILD_LIBS += $(LIBINTL) $(LIBICONV)
+ endif
+ 
+ build/genmatch$(build_exeext) : $(BUILD_CPPLIB) \
+-  $(BUILD_ERRORS) build/vec.o build/hash-table.o
++  $(BUILD_ERRORS) build/vec.o build/hash-table.o build/sort.o
+ 
+ # These programs are not linked with the MD reader.
+ build/gengtype$(build_exeext) : build/gengtype-lex.o build/gengtype-parse.o \
+diff --git a/gcc/sort.cc b/gcc/sort.cc
+new file mode 100644
+index 0000000..28d5226
+--- /dev/null
++++ b/gcc/sort.cc
+@@ -0,0 +1,232 @@
++/* Platform-independent deterministic sort function.
++   Copyright (C) 2018 Free Software Foundation, Inc.
++   Contributed by Alexander Monakov.
++
++This file is part of GCC.
++
++GCC is free software; you can redistribute it and/or modify it
++under the terms of the GNU General Public License as published by the
++Free Software Foundation; either version 3, or (at your option) any
++later version.
++
++GCC is distributed in the hope that it will be useful, but WITHOUT
++ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
++for more details.
++
++You should have received a copy of the GNU General Public License
++along with GCC; see the file COPYING3.  If not see
++<http://www.gnu.org/licenses/>.  */
++
++/* This implements a sort function suitable for GCC use cases:
++   - signature-compatible to C qsort, but relaxed contract:
++     - may apply the comparator to elements in a temporary buffer
++     - may abort on allocation failure
++   - deterministic (but not necessarily stable)
++   - fast, especially for common cases (0-5 elements of size 8 or 4)
++
++   The implementation uses a network sort for up to 5 elements and
++   a merge sort on top of that.  Neither stage has branches depending on
++   comparator result, trading extra arithmetic for branch mispredictions.  */
++
++#ifdef GENERATOR_FILE
++#include "bconfig.h"
++#else
++#include "config.h"
++#endif
++
++#include "system.h"
++
++#define likely(cond) __builtin_expect ((cond), 1)
++
++#ifdef __GNUC__
++#define noinline __attribute__ ((__noinline__))
++#else
++#define noinline
++#endif
++
++/* C-style qsort comparator function type.  */
++typedef int cmp_fn (const void *, const void *);
++
++/* Structure holding read-mostly (read-only in netsort) context.  */
++struct sort_ctx
++{
++  cmp_fn *cmp; // pointer to comparator
++  char   *out; // output buffer
++  size_t n;    // number of elements
++  size_t size; // element size
++};
++
++/* Helper for netsort. Permute, possibly in-place, 2 or 3 elements,
++   placing E0 to C->OUT, E1 to C->OUT + C->SIZE, and so on.  */
++static void
++reorder23 (sort_ctx *c, char *e0, char *e1, char *e2)
++{
++#define REORDER_23(SIZE, STRIDE, OFFSET)        \
++do {                                            \
++  size_t t0, t1;                                \
++  memcpy (&t0, e0 + OFFSET, SIZE);              \
++  memcpy (&t1, e1 + OFFSET, SIZE);              \
++  char *out = c->out + OFFSET;                  \
++  if (likely (c->n == 3))                       \
++    memcpy (out + 2*STRIDE, e2 + OFFSET, SIZE); \
++  memcpy (out, &t0, SIZE); out += STRIDE;       \
++  memcpy (out, &t1, SIZE);                      \
++} while (0)
++
++  if (sizeof (size_t) == 8 && likely (c->size == 8))
++    REORDER_23 (8, 8, 0);
++  else if (likely (c->size == 4))
++    REORDER_23 (4, 4, 0);
++  else
++    {
++      size_t offset = 0, step = sizeof (size_t);
++      for (; offset + step <= c->size; offset += step)
++	REORDER_23 (step, c->size, offset);
++      for (; offset < c->size; offset++)
++	REORDER_23 (1, c->size, offset);
++    }
++}
++
++/* Like reorder23, but permute 4 or 5 elements.  */
++static void
++reorder45 (sort_ctx *c, char *e0, char *e1, char *e2, char *e3, char *e4)
++{
++#define REORDER_45(SIZE, STRIDE, OFFSET)        \
++do {                                            \
++  size_t t0, t1, t2, t3;                        \
++  memcpy (&t0, e0 + OFFSET, SIZE);              \
++  memcpy (&t1, e1 + OFFSET, SIZE);              \
++  memcpy (&t2, e2 + OFFSET, SIZE);              \
++  memcpy (&t3, e3 + OFFSET, SIZE);              \
++  char *out = c->out + OFFSET;                  \
++  if (likely (c->n == 5))                       \
++    memcpy (out + 4*STRIDE, e4 + OFFSET, SIZE); \
++  memcpy (out, &t0, SIZE); out += STRIDE;       \
++  memcpy (out, &t1, SIZE); out += STRIDE;       \
++  memcpy (out, &t2, SIZE); out += STRIDE;       \
++  memcpy (out, &t3, SIZE);                      \
++} while (0)
++
++  if (sizeof (size_t) == 8 && likely (c->size == 8))
++    REORDER_45 (8, 8, 0);
++  else if (likely(c->size == 4))
++    REORDER_45 (4, 4, 0);
++  else
++    {
++      size_t offset = 0, step = sizeof (size_t);
++      for (; offset + step <= c->size; offset += step)
++	REORDER_45 (step, c->size, offset);
++      for (; offset < c->size; offset++)
++	REORDER_45 (1, c->size, offset);
++    }
++}
++
++/* Helper for netsort. Invoke comparator CMP on E0 and E1.
++   Return E0^E1 if E0 compares less than E1, zero otherwise.
++   This is noinline to avoid code growth and confine invocation
++   to a single call site, assisting indirect branch prediction.  */
++noinline static intptr_t
++cmp1 (char *e0, char *e1, cmp_fn *cmp)
++{
++  intptr_t x = (intptr_t)e0 ^ (intptr_t)e1;
++  return x & (cmp (e0, e1) >> 31);
++}
++
++/* Execute network sort on 2 to 5 elements from IN, placing them into C->OUT.
++   IN may be equal to C->OUT, in which case elements are sorted in place.  */
++static void
++netsort (char *in, sort_ctx *c)
++{
++#define CMP(e0, e1)                   \
++do {                                  \
++  intptr_t x = cmp1 (e1, e0, c->cmp); \
++  e0 = (char *)((intptr_t)e0 ^ x);    \
++  e1 = (char *)((intptr_t)e1 ^ x);    \
++} while (0)
++
++  char *e0 = in, *e1 = e0 + c->size, *e2 = e1 + c->size;
++  CMP (e0, e1);
++  if (likely (c->n == 3))
++    {
++      CMP (e1, e2);
++      CMP (e0, e1);
++    }
++  if (c->n <= 3)
++    return reorder23 (c, e0, e1, e2);
++  char *e3 = e2 + c->size, *e4 = e3 + c->size;
++  if (likely (c->n == 5))
++    {
++      CMP (e3, e4);
++      CMP (e2, e4);
++    }
++  CMP (e2, e3);
++  if (likely (c->n == 5))
++    {
++      CMP (e0, e3);
++      CMP (e1, e4);
++    }
++  CMP (e0, e2);
++  CMP (e1, e3);
++  CMP (e1, e2);
++  reorder45 (c, e0, e1, e2, e3, e4);
++}
++
++/* Execute merge sort on N elements from IN, placing them into OUT,
++   using TMP as temporary storage if IN is equal to OUT.
++   This is a stable sort if netsort is used only for 2 or 3 elements.  */
++static void
++mergesort (char *in, sort_ctx *c, size_t n, char *out, char *tmp)
++{
++  if (likely (n <= 5))
++    {
++      c->out = out;
++      c->n = n;
++      return netsort (in, c);
++    }
++  size_t nl = n / 2, nr = n - nl, sz = nl * c->size;
++  char *mid = in + sz, *r = out + sz, *l = in == out ? tmp : in;
++  /* Sort the right half, outputting to right half of OUT.  */
++  mergesort (mid, c, nr, r, tmp);
++  /* Sort the left half, leaving left half of OUT free.  */
++  mergesort (in, c, nl, l, mid);
++  /* Merge sorted halves given by L, R to [OUT, END).  */
++#define MERGE_ELTSIZE(SIZE)                     \
++do {                                            \
++  intptr_t mr = c->cmp (r, l) >> 31;            \
++  intptr_t lr = (intptr_t)l ^ (intptr_t)r;      \
++  lr = (intptr_t)l ^ (lr & mr);                 \
++  out = (char *)memcpy (out, (char *)lr, SIZE); \
++  out += SIZE;                                  \
++  r += mr & SIZE;                               \
++  if (r == out) return;                         \
++  l += ~mr & SIZE;                              \
++} while (r != end)
++
++  if (likely (c->cmp(r, l + (r - out) - c->size) < 0))
++    {
++      char *end = out + n * c->size;
++      if (sizeof (size_t) == 8 && likely (c->size == 8))
++	MERGE_ELTSIZE (8);
++      else if (likely (c->size == 4))
++	MERGE_ELTSIZE (4);
++      else
++	MERGE_ELTSIZE (c->size);
++    }
++  memcpy (out, l, r - out);
++}
++
++void
++gcc_qsort (void *vbase, size_t n, size_t size, cmp_fn *cmp)
++{
++  if (n < 2)
++    return;
++  char *base = (char *)vbase;
++  sort_ctx c = {cmp, base, n, size};
++  long long scratch[32];
++  size_t bufsz = (n / 2) * size;
++  void *buf = bufsz <= sizeof scratch ? scratch : xmalloc (bufsz);
++  mergesort (base, &c, n, base, (char *)buf);
++  if (buf != scratch)
++    free (buf);
++}
+diff --git a/gcc/system.h b/gcc/system.h
+index 4abc321..88dffcc 100644
+--- a/gcc/system.h
++++ b/gcc/system.h
+@@ -1202,11 +1202,14 @@ helper_const_non_const_cast (const char *p)
+ /* qsort comparator consistency checking: except in release-checking compilers,
+    redirect 4-argument qsort calls to qsort_chk; keep 1-argument invocations
+    corresponding to vec::qsort (cmp): they use C qsort internally anyway.  */
+-#if CHECKING_P
++void qsort_chk (void *, size_t, size_t, int (*)(const void *, const void *));
++void gcc_qsort (void *, size_t, size_t, int (*)(const void *, const void *));
+ #define PP_5th(a1, a2, a3, a4, a5, ...) a5
+ #undef qsort
++#if CHECKING_P
+ #define qsort(...) PP_5th (__VA_ARGS__, qsort_chk, 3, 2, qsort, 0) (__VA_ARGS__)
+-void qsort_chk (void *, size_t, size_t, int (*)(const void *, const void *));
++#else
++#define qsort(...) PP_5th (__VA_ARGS__, gcc_qsort, 3, 2, qsort, 0) (__VA_ARGS__)
+ #endif
+ 
+ #endif /* ! GCC_SYSTEM_H */
+diff --git a/gcc/vec.c b/gcc/vec.c
+index 695cd1e..65baa5d 100644
+--- a/gcc/vec.c
++++ b/gcc/vec.c
+@@ -215,7 +215,7 @@ void
+ qsort_chk (void *base, size_t n, size_t size,
+ 	   int (*cmp)(const void *, const void *))
+ {
+-  (qsort) (base, n, size, cmp);
++  gcc_qsort (base, n, size, cmp);
+ #if 0
+ #define LIM(n) (n)
+ #else
+-- 
+2.7.4
+

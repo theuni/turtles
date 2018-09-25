@@ -6,6 +6,7 @@ $(package)_sha256_hash=196c3c04ba2613f893283977e6011b2345d1cd1af9abeac58e916b1aa
 $(package)_build_subdir=build
 $(package)_dependencies=native_binutils
 $(package)_mingw32_dependencies=native_mingw-w64-headers
+$(package)_patches=0001-Introduce-gcc_qsort.patch 0002-gcc_qsort-avoid-oversized-memcpy-temporaries.patch 0003-gcc_qsort-avoid-overlapping-memcpy-PR-86311.patch 0004-qsort_chk-call-from-gcc_qsort-instead-of-wrapping-it.patch
 
 $(package)_mpfr_version=4.0.1
 $(package)_mpfr_download_path=https://ftpmirror.gnu.org/mpfr
@@ -42,6 +43,13 @@ define $(package)_extract_cmds
   mkdir -p mpfr && tar --strip-components=1 -C mpfr -xf $($(package)_source_dir)/$($(package)_mpfr_file_name) && \
   mkdir -p gmp && tar --strip-components=1 -C gmp -xf $($(package)_source_dir)/$($(package)_gmp_file_name) && \
   mkdir -p mpc && tar --strip-components=1 -C mpc -xf $($(package)_source_dir)/$($(package)_mpc_file_name)
+endef
+
+define $(package)_preprocess_cmds
+  patch -p1 < $($(package)_patch_dir)/0001-Introduce-gcc_qsort.patch && \
+  patch -p1 < $($(package)_patch_dir)/0002-gcc_qsort-avoid-oversized-memcpy-temporaries.patch && \
+  patch -p1 < $($(package)_patch_dir)/0003-gcc_qsort-avoid-overlapping-memcpy-PR-86311.patch && \
+  patch -p1 < $($(package)_patch_dir)/0004-qsort_chk-call-from-gcc_qsort-instead-of-wrapping-it.patch
 endef
 
 define $(package)_set_vars

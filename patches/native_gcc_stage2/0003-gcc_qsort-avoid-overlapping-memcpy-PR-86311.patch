@@ -1,0 +1,39 @@
+From f2bb7db9d3561a0caecd769425f9fd69f6c339bd Mon Sep 17 00:00:00 2001
+From: amonakov <amonakov@138bc75d-0d04-0410-961f-82ee72b054a4>
+Date: Mon, 25 Jun 2018 17:44:15 +0000
+Subject: [PATCH 3/4] gcc_qsort: avoid overlapping memcpy (PR 86311)
+
+	PR middle-end/86311
+	* sort.cc (REORDER_23): Avoid memcpy with same destination and source.
+	(REORDER_45): Likewise.
+
+git-svn-id: svn+ssh://gcc.gnu.org/svn/gcc/trunk@262092 138bc75d-0d04-0410-961f-82ee72b054a4
+---
+ gcc/sort.cc | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/gcc/sort.cc b/gcc/sort.cc
+index a48a477..293e205 100644
+--- a/gcc/sort.cc
++++ b/gcc/sort.cc
+@@ -69,7 +69,7 @@ do {                                                     \
+   memcpy (&t1, e1 + OFFSET, sizeof (TYPE));              \
+   char *out = c->out + OFFSET;                           \
+   if (likely (c->n == 3))                                \
+-    memcpy (out + 2*STRIDE, e2 + OFFSET, sizeof (TYPE)); \
++    memmove (out + 2*STRIDE, e2 + OFFSET, sizeof (TYPE));\
+   memcpy (out, &t0, sizeof (TYPE)); out += STRIDE;       \
+   memcpy (out, &t1, sizeof (TYPE));                      \
+ } while (0)
+@@ -101,7 +101,7 @@ do {                                                     \
+   memcpy (&t3, e3 + OFFSET, sizeof (TYPE));              \
+   char *out = c->out + OFFSET;                           \
+   if (likely (c->n == 5))                                \
+-    memcpy (out + 4*STRIDE, e4 + OFFSET, sizeof (TYPE)); \
++    memmove (out + 4*STRIDE, e4 + OFFSET, sizeof (TYPE));\
+   memcpy (out, &t0, sizeof (TYPE)); out += STRIDE;       \
+   memcpy (out, &t1, sizeof (TYPE)); out += STRIDE;       \
+   memcpy (out, &t2, sizeof (TYPE)); out += STRIDE;       \
+-- 
+2.7.4
+

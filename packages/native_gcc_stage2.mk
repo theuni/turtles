@@ -9,6 +9,8 @@ $(package)_dependencies=native_binutils
 $(package)_linux_dependencies=native_musl native_linux_system_headers
 $(package)_mingw32_dependencies=native_mingw-w64-headers native_mingw-w64-crt
 $(package)_patches=0001-default-static-pie.patch 0002-autoconf.patch 0003-fixup-static-pie.patch
+$(package)_patches+=0001-Introduce-gcc_qsort.patch 0002-gcc_qsort-avoid-oversized-memcpy-temporaries.patch 0003-gcc_qsort-avoid-overlapping-memcpy-PR-86311.patch 0004-qsort_chk-call-from-gcc_qsort-instead-of-wrapping-it.patch
+
 
 $(package)_mpfr_version=$(native_gcc_mpfr_version)
 $(package)_mpfr_download_path=$(native_gcc_mpfr_download_path)
@@ -57,7 +59,11 @@ define $(package)_preprocess_cmds
   sed -i 's/-nostdinc++/-nostdinc++ \$$$$(XGCC_FLAGS_FOR_TARGET)/' Makefile.in && \
   patch -p1 < $($(package)_patch_dir)/0001-default-static-pie.patch && \
   patch -p1 < $($(package)_patch_dir)/0002-autoconf.patch && \
-  patch -p1 < $($(package)_patch_dir)/0003-fixup-static-pie.patch
+  patch -p1 < $($(package)_patch_dir)/0003-fixup-static-pie.patch && \
+  patch -p1 < $($(package)_patch_dir)/0001-Introduce-gcc_qsort.patch && \
+  patch -p1 < $($(package)_patch_dir)/0002-gcc_qsort-avoid-oversized-memcpy-temporaries.patch && \
+  patch -p1 < $($(package)_patch_dir)/0003-gcc_qsort-avoid-overlapping-memcpy-PR-86311.patch && \
+  patch -p1 < $($(package)_patch_dir)/0004-qsort_chk-call-from-gcc_qsort-instead-of-wrapping-it.patch
 endef
 
 #  patch -p1 < $($(package)_patch_dir)/0009-stabilize-ira-color.patch && \

@@ -1,0 +1,83 @@
+From 8b32de2adbabb670f77a964370143116b306161d Mon Sep 17 00:00:00 2001
+From: amonakov <amonakov@138bc75d-0d04-0410-961f-82ee72b054a4>
+Date: Mon, 3 Sep 2018 16:46:46 +0000
+Subject: [PATCH 4/4] qsort_chk: call from gcc_qsort instead of wrapping it
+
+	* sort.cc (gcc_qsort) [CHECKING_P]: Call qsort_chk.
+	* system.h (qsort): Always redirect to gcc_qsort.  Update comment.
+	* vec.c (qsort_chk): Do not call gcc_qsort.  Update comment.
+
+git-svn-id: svn+ssh://gcc.gnu.org/svn/gcc/trunk@264065 138bc75d-0d04-0410-961f-82ee72b054a4
+---
+ gcc/sort.cc  |  3 +++
+ gcc/system.h |  8 ++------
+ gcc/vec.c    | 13 ++-----------
+ 3 files changed, 7 insertions(+), 17 deletions(-)
+
+diff --git a/gcc/sort.cc b/gcc/sort.cc
+index 293e205..9f8ee12 100644
+--- a/gcc/sort.cc
++++ b/gcc/sort.cc
+@@ -229,4 +229,7 @@ gcc_qsort (void *vbase, size_t n, size_t size, cmp_fn *cmp)
+   mergesort (base, &c, n, base, (char *)buf);
+   if (buf != scratch)
+     free (buf);
++#if CHECKING_P
++  qsort_chk (vbase, n, size, cmp);
++#endif
+ }
+diff --git a/gcc/system.h b/gcc/system.h
+index 88dffcc..aa47358 100644
+--- a/gcc/system.h
++++ b/gcc/system.h
+@@ -1199,17 +1199,13 @@ helper_const_non_const_cast (const char *p)
+ /* Get definitions of HOST_WIDE_INT.  */
+ #include "hwint.h"
+ 
+-/* qsort comparator consistency checking: except in release-checking compilers,
+-   redirect 4-argument qsort calls to qsort_chk; keep 1-argument invocations
++/* GCC qsort API-compatible functions: except in release-checking compilers,
++   redirect 4-argument qsort calls to gcc_qsort; keep 1-argument invocations
+    corresponding to vec::qsort (cmp): they use C qsort internally anyway.  */
+ void qsort_chk (void *, size_t, size_t, int (*)(const void *, const void *));
+ void gcc_qsort (void *, size_t, size_t, int (*)(const void *, const void *));
+ #define PP_5th(a1, a2, a3, a4, a5, ...) a5
+ #undef qsort
+-#if CHECKING_P
+-#define qsort(...) PP_5th (__VA_ARGS__, qsort_chk, 3, 2, qsort, 0) (__VA_ARGS__)
+-#else
+ #define qsort(...) PP_5th (__VA_ARGS__, gcc_qsort, 3, 2, qsort, 0) (__VA_ARGS__)
+-#endif
+ 
+ #endif /* ! GCC_SYSTEM_H */
+diff --git a/gcc/vec.c b/gcc/vec.c
+index 65baa5d..5d77578 100644
+--- a/gcc/vec.c
++++ b/gcc/vec.c
+@@ -201,21 +201,12 @@ qsort_chk_error (const void *p1, const void *p2, const void *p3,
+   internal_error ("qsort checking failed");
+ }
+ 
+-/* Wrapper around qsort with checking that CMP is consistent on given input.
+-
+-   Strictly speaking, passing invalid (non-transitive, non-anti-commutative)
+-   comparators to libc qsort can result in undefined behavior.  Therefore we
+-   should ideally perform consistency checks prior to invoking qsort, but in
+-   order to do that optimally we'd need to sort the array ourselves beforehand
+-   with a sorting routine known to be "safe".  Instead, we expect that most
+-   implementations in practice will still produce some permutation of input
+-   array even for invalid comparators, which enables us to perform checks on
+-   the output array.  */
++/* Verify anti-symmetry and transitivity for comparator CMP on sorted array
++   of N SIZE-sized elements pointed to by BASE.  */
+ void
+ qsort_chk (void *base, size_t n, size_t size,
+ 	   int (*cmp)(const void *, const void *))
+ {
+-  gcc_qsort (base, n, size, cmp);
+ #if 0
+ #define LIM(n) (n)
+ #else
+-- 
+2.7.4
+
