@@ -1,0 +1,18 @@
+sudo: required
+dist: trusty
+os: linux
+language: minimal
+env:
+  global:
+    - MAKEJOBS=-j3
+    - DOCKER_NAME_TAG=ubuntu:18.04
+    - DOCKER_PACKAGES="build-essential libtool autotools-dev automake pkg-config bsdmainutils curl git ca-certificates clang"
+install:
+    - travis_retry docker pull $DOCKER_NAME_TAG
+    - DOCKER_ID=$(docker run $DOCKER_ADMIN -idt --mount type=bind,src=$TRAVIS_BUILD_DIR,dst=$TRAVIS_BUILD_DIR -w $TRAVIS_BUILD_DIR $DOCKER_NAME_TAG)
+    - DOCKER_EXEC () { docker exec $DOCKER_ID bash -c "cd $PWD && $*"; }
+    - travis_retry DOCKER_EXEC apt-get update
+    - travis_retry DOCKER_EXEC apt-get install --no-install-recommends --no-upgrade -qq $DOCKER_PACKAGES
+script:
+    - travis_wait 50 DOCKER_EXEC "make $MAKEJOBS &> /tmp/make_log"
+    - DOCKER_EXEC tail -300 /tmp/make_log
